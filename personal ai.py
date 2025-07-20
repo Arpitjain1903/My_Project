@@ -9,7 +9,8 @@ import fnmatch
 from threading import Thread
 import datetime 
 import google.generativeai as genai
-from config import apikey
+from config import apikey, apikey2
+import requests
 
 # --- Initialize Speaker with Personality ---
 speaker = win32com.client.Dispatch("SAPI.SpVoice")
@@ -272,37 +273,52 @@ def chat_with_anya():
                 say("I'll be here when you're ready to chat!", "happy")
                 break
         
-        if any(phrase in user_input for phrase in ["exit chat", "goodbye", "stop talking"]):
+        if any(phrase in user_input for phrase in ["exit chat", "good bye", "stop talking"]):
             say("It was wonderful chatting with you! Let's talk again soon.", "happy")
             break
             
-        # Add to conversation history
         conversation_history.append(f"User: {user_input}")
         
         try:
-            # Configure Gemini for conversational context
-            genai.configure(api_key=apikey)
-            model = genai.GenerativeModel('gemini-pro')
-            
-            # Create context from history
-            context = "\n".join(conversation_history[-3:])  # Last 3 exchanges
+            # Build the prompt using conversation history
+            context = "\n".join(conversation_history[-3:])
             prompt = f"""Continue this conversation naturally as helpful AI assistant Anya:
-            
             {context}
             Anya:"""
             
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.9,  # More creative responses
-                    max_output_tokens=150
-                )
-            )
+            # Prepare the OpenRouter API request
+            headers = {
+                "Authorization": f"Bearer {apikey2}",  # Your OpenRouter API key
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://example.com",  # Change to your app URL
+                "X-Title": "Anya Chat"                # Your app name
+            }
             
-            ai_response = response.text.strip()
+            payload = {
+                "model": "mistralai/mistral-small-3.2-24b-instruct:free",  # Free model
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.9,  # Matching your Gemini settings
+                "max_tokens": 150     # Matching your Gemini settings
+            }
+            
+            # Make the API call
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            
+            # Get the AI response
+            ai_response = response.json()['choices'][0]['message']['content'].strip()
             print(f"\nAnya: {ai_response}")
             
-            # Speak with emotional variation
+            # Emotional response logic (same as before)
             emotion = "thoughtful"
             if "!" in ai_response or "great" in ai_response.lower():
                 emotion = "happy"
@@ -310,11 +326,9 @@ def chat_with_anya():
                 emotion = "thoughtful"
                 
             say(ai_response, emotion)
-            
-            # Save to history
             conversation_history.append(f"Anya: {ai_response}")
             
-            # Auto-save conversation
+            # Auto-save conversation (same as before)
             if len(conversation_history) % 4 == 0:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(f"Anya_Chat_{timestamp}.txt", "w") as f:
@@ -334,7 +348,7 @@ if __name__ == "__main__":
         if not query:
             continue
         
-        if "hi anya" in query:
+        if "hi anya" in query or "hello anya" in query or "let's talk" in query:
             say("Yes, darling? 💖  Lets have a bauitful conversation !", "happy ")
             chat_with_anya()
         # Exit command
