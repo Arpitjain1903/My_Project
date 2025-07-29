@@ -8,21 +8,32 @@ import random
 import fnmatch
 from threading import Thread
 import datetime 
+import time
+import subprocess
 import google.generativeai as genai
 from config import apikey, apikey2
-import requests
 
 # --- Initialize Speaker with Personality ---
 speaker = win32com.client.Dispatch("SAPI.SpVoice")
 pygame.mixer.init()
-
-# Voice Configuration
 voices = speaker.GetVoices()
-female_voice_index = 1  # Change based on your system
-speaker.Voice = voices.Item(female_voice_index)
-speaker.Rate = 1.5  # Default slightly faster pace
-speaker.Volume = 90   # Softer but clear
 
+# Always use a female voice if available
+def set_female_voice(speaker, voices):
+    preferred_keywords = ["female", "zira", "eva", "maria", "susan", "heera", "hannah", "sarah", "lisa"]
+    for i in range(voices.Count):
+        desc = voices.Item(i).GetDescription().lower()
+        if any(keyword in desc for keyword in preferred_keywords):
+            speaker.Voice = voices.Item(i)
+            print(f"Using female voice: {desc}")
+            return
+    # Fallback: use the first available voice
+    speaker.Voice = voices.Item(0)
+    print(f"No female voice found, using: {voices.Item(0).GetDescription()}")
+
+set_female_voice(speaker, voices)
+
+ 
 # Personality Settings
 greetings = [
     "Hey there, superstar! ✨", 
@@ -37,27 +48,37 @@ goodbyes = [
 ]
 
 jokes = [
-    "Why don’t AIs like fast food? Too many bytes! 🍔",
+    "Why don't AIs like fast food? Too many bytes! 🍔",
     "Why was the computer cold? It left its Windows open! ❄️"
 ]
 
-# Emotional Voice System
-
+# Enhanced Emotional Voice System for More Natural Sound
 def say(text, emotion="neutral"):
     emotions = {
-        "happy": {"rate": 2, "volume": 95},
-        "sad": {"rate": 0.5, "volume": 80},
-        "excited": {"rate": 2.5, "volume": 100},
-        "default": {"rate": 1.5, "volume": 90}
+        "happy": {"rate": -1, "volume": 90},  # Slightly faster
+        "sad": {"rate": -2, "volume": 75},     # Slower, softer
+        "excited": {"rate": 1, "volume": 95}, # Faster, louder
+        "thoughtful": {"rate": -1, "volume": 80}, # Slower, softer
+        "default": {"rate": 0, "volume": 85}  # Natural settings
     }
+    
     style = emotions.get(emotion, emotions["default"])
     
+    # Apply voice settings
     speaker.Rate = style["rate"]
     speaker.Volume = style["volume"]
+    
+    # Add natural pauses and emphasis for more human-like speech
+    if emotion == "thoughtful":
+        text = text.replace(".", "... ")
+        text = text.replace("!", "! ")
+    
+    # Speak with natural pauses
     speaker.Speak(text)
-    # Reset to default
-    speaker.Rate = 1.5
-    speaker.Volume = 90
+    
+    # Reset to default natural settings
+    speaker.Rate = 0
+    speaker.Volume = 85
 
 def listen():
     r = SR.Recognizer()
@@ -191,29 +212,7 @@ def handle_file_open(filename):
         os.startfile(file_path)
         say(f"Opening {os.path.basename(file_path)}")
 
-def open_application(app_name):
-    """Handle opening applications"""
-    app_name = app_name.lower().strip()
-    app_paths = {
-        "notepad": "notepad.exe",
-        "calculator": "calc.exe",
-        "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        "word": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
-        "excel": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
-        "powerpoint": "C:\\Program Files\\Microsoft Office\\root\\Office16\\POWERPNT.EXE",
-        "jupyter": "jupyter-notebook.exe",
-        "whatsapp":""
-        # Add more application paths as needed
-    }
-    
-    if app_name in app_paths:
-        try:
-            os.startfile(app_paths[app_name])
-            say(f"Opening {app_name}")
-        except Exception as e:
-            say(f"Sorry, I couldn't open {app_name}. Error: {str(e)}")
-    else:
-        say(f"I don't know how to open {app_name}. Please teach me the path.")
+ 
 
 def ai(prompt):
     try:
@@ -260,7 +259,11 @@ def tell_joke():
 def chat_with_anya():
     say(random.choice(greetings), "happy")
     conversation_history = []
-    
+    from openai import OpenAI
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=apikey2,
+    )
     while True:
         user_input = listen()
         
@@ -278,165 +281,145 @@ def chat_with_anya():
             break
             
         conversation_history.append(f"User: {user_input}")
-        
         try:
             # Build the prompt using conversation history
             context = "\n".join(conversation_history[-3:])
-            prompt = f"""Continue this conversation naturally as helpful AI assistant Anya:
-            {context}
-            Anya:"""
-            
-            # Prepare the OpenRouter API request
-            headers = {
-                "Authorization": f"Bearer {apikey2}",  # Your OpenRouter API key
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://example.com",  # Change to your app URL
-                "X-Title": "Anya Chat"                # Your app name
-            }
-            
-            payload = {
-                "model": "mistralai/mistral-small-3.2-24b-instruct:free",  # Free model
-                "messages": [
+            prompt = f"""Continue this conversation naturally as helpful AI assistant Anya:\n{context}\nAnya:"""
+
+            completion = client.chat.completions.create(
+                extra_headers={
+                    "HTTP-Referer": "https://example.com", # Optional. Site URL for rankings on openrouter.ai.
+                    "X-Title": "Anya Chat", # Optional. Site title for rankings on openrouter.ai.
+                },
+                extra_body={},
+                model="qwen/qwen3-coder:free",
+                messages=[
                     {
                         "role": "user",
                         "content": prompt
                     }
-                ],
-                "temperature": 0.9,  # Matching your Gemini settings
-                "max_tokens": 150     # Matching your Gemini settings
-            }
-            
-            # Make the API call
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload
+                ]
             )
-            response.raise_for_status()
-            
-            # Get the AI response
-            ai_response = response.json()['choices'][0]['message']['content'].strip()
+            ai_response = completion.choices[0].message.content.strip()
             print(f"\nAnya: {ai_response}")
-            
             # Emotional response logic (same as before)
             emotion = "thoughtful"
             if "!" in ai_response or "great" in ai_response.lower():
                 emotion = "happy"
             elif "?" in ai_response:
                 emotion = "thoughtful"
-                
             say(ai_response, emotion)
             conversation_history.append(f"Anya: {ai_response}")
-            
             # Auto-save conversation (same as before)
             if len(conversation_history) % 4 == 0:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(f"Anya_Chat_{timestamp}.txt", "w") as f:
                     f.write("\n".join(conversation_history))
-            
         except Exception as e:
             error_msg = f"Oops! My circuits glitched: {str(e)}"
             say(error_msg, "sad")
             print("Error:", error_msg)
 
 if __name__ == "__main__":
-    say(random.choice(greetings), "happy")
-    while True:
-        print("\n🎙️ Listening...")
-        query = listen().lower()
+    # Check for apikey2 at startup
+    if not apikey2 or not isinstance(apikey2, str) or apikey2.strip() == "":
+        print("ERROR: OpenRouter API key (apikey2) is missing or empty. Please set it in config.py.")
+        say("Sorry, my OpenRouter key is missing. Please check my configuration.", "sad")
+        sys.exit(1)
+    try:
+        say(random.choice(greetings), "happy")
+        while True:
+            print("\n🎙️ Listening...")
+            query = listen().lower()
 
-        if not query:
-            continue
-        
-        if "hi anya" in query or "hello anya" in query or "let's talk" in query:
-            say("Yes, darling? 💖  Lets have a bauitful conversation !", "happy ")
-            chat_with_anya()
-        # Exit command
-        
-        if any(phrase in query for phrase in ["go to sleep", "sleep", "stop", "exit", "bye"]):
-            pygame.mixer.music.stop()
-            say(random.choice(goodbyes), "happy")
-            sys.exit()
-        
-        elif "joke" in query:
-            tell_joke()
+            if not query:
+                continue
+            
+            if "hi anya" in query or "hello anya" in query or "let's talk" in query:
+                say("Yes, darling? 💖  Lets have a beautiful  conversation !", "happy ")
+                chat_with_anya()
+            # Exit command
+            
+            elif any(phrase in query for phrase in ["go to sleep", "sleep", "stop", "exit", "bye"]):
+                pygame.mixer.music.stop()
+                say(random.choice(goodbyes), "happy")
+                sys.exit()
+            
+            elif "joke" in query:
+                tell_joke()
 
-        elif "sing" in query:
-            say("🎵 Anya-bot, Anya-bot, does whatever you like~ 🎶", "excited")
+            elif "sing" in query:
+                say("🎵 Anya-bot, Anya-bot, does whatever you like~ 🎶", "excited")
 
-        elif "i feel" in query:
-            if "sad" in query:
-                say("Oh no! *virtual hug* Let me brighten your day! 🌈", "sad")
-            elif "happy" in query:
-                say("YAY! Your happiness is contagious! ✨", "excited")
-        # File opening command
+            # Removed list_available_voices and set_custom_voice command handlers
 
-        elif "open" in query and "file" in query:
-            filename = query.replace("open", "").replace("file", "").strip()
-            if filename:
-                handle_file_open(filename)
-            else:
-                say("Please specify a file name.")
-        
-        # Website opening
+            elif "i feel" in query:
+                if "sad" in query:
+                    say("Oh no! *virtual hug* Let me brighten your day! 🌈", "sad")
+                elif "happy" in query:
+                    say("YAY! Your happiness is contagious! ✨", "excited")
+            
+            
 
-        elif "open" in query or ("website" in query or "site" in query or "." in query):
-            site_name = query.replace("open", "").replace("website", "").replace("site", "").strip()
-            if site_name:
+            # File opening command
+            elif "open" in query and "file" in query:
+                filename = query.replace("open", "").replace("file", "").strip()
+                if filename:
+                    handle_file_open(filename)
+                else:
+                    say("Please specify a file name.")
+            
+            # Music control
+            elif "stop music" in query:
+                pygame.mixer.music.stop()
+                say("Music stopped")
+            
+            # WEBSITE OPENING - This should come AFTER app opening
+            elif "open" in query and ("website" in query or "site" in query or "." in query):
+                site_name = query.replace("open", "").replace("website", "").replace("site", "").strip()
+                if site_name:
+                    say(f"Opening {site_name}...")
+                    url = get_website_url(site_name)
+                    webbrowser.open(url)
+                else:
+                    say("Please specify which website to open.")
+                    
+            # Direct website opening (without saying "website")
+            elif "open" in query and any(web in query for web in [".com", ".org", ".net", ".ai", ".io"]):
+                site_name = query.replace("open", "").strip()
                 say(f"Opening {site_name}...")
                 url = get_website_url(site_name)
                 webbrowser.open(url)
+
+
+            elif "search" in query:
+                search_query = query.replace("search", "").strip()
+                if search_query:
+                    url = f"https://www.google.com/search?q={search_query}"
+                    webbrowser.open(url)
+                    say(f"Searching for {search_query} on Google")
+                else:
+                    say("Please specify what you want to search for.")
+            
+            # In your main loop, fix the prompt extraction:
+            elif "using gemini" in query or "using artificial intelligence" in query:
+                prompt = query.replace("using gemini", "").replace("using artificial intelligence", "").strip()
+                if prompt:
+                    say("Accessing the knowledge cosmos... 🌌", "happy")
+                    ai(prompt)
+                else:
+                    say("Please tell me what you'd like me to ask Gemini.")
+
+            elif "time" in query or "date" in query:  # Moved before the else clause
+                date = datetime.datetime.now().strftime("%B %d, %Y")
+                time_str = datetime.datetime.now().strftime("%I:%M %p")
+                say(f"Sir, today is {date} and the current time is {time_str} ","happy")
+
+            # Default response
             else:
-                say("Please specify which website to open.")
-                
-        # Direct website opening (without saying "website")
-
-        elif "open" in query or any(web in query for web in [".com", ".org", ".net", ".ai", ".io"]):
-            site_name = query.replace("open", "").strip()
-            say(f"Opening {site_name}...")
-            url = get_website_url(site_name)
-            webbrowser.open(url)
-        
-        # Music control
-
-        elif "stop music" in query:
-            pygame.mixer.music.stop()
-            say("Music stopped")
-             
-             #to open any app 
-
-        elif "open" in query and "app" in query:
-            app_name = query.replace("open", "").replace("app", "").strip()
-            if app_name:
-                open_application(app_name)
-            else:
-                say("Please specify which application to open.")
-
-
-        elif "search" in query:
-            search_query = query.replace("search", "").strip()
-            if search_query:
-                url = f"https://www.google.com/search?q={search_query}"
-                webbrowser.open(url)
-                say(f"Searching for {search_query} on Google")
-            else:
-                say("Please specify what you want to search for.")
-        
-        # In your main loop, fix the prompt extraction:
-        elif "using gemini" in query or "using artificial intelligence" in query:
-            prompt = query.replace("using gemini", "").replace("using artificial intelligence", "").strip()
-            if prompt:
-                say("Accessing the knowledge cosmos... 🌌", "happy")
-                ai(prompt)
-            else:
-                say("Please tell me what you'd like me to ask Gemini.")
-
-        # Default response
-        else:
-             say("Hmm, let me think... Nope, need clearer instructions! 🤔", "sad")
-
-        if "time" in query or "date" in query:  # More flexible trigger
-            date = datetime.datetime.now().strftime("%B %d, %Y")
-            time = datetime.datetime.now().strftime("%I:%M %p")
-            say(f"Sir, today is {date} and the current time is {time} ","happy")
-    say("System standby... but I'll miss you! 💔", "sad")
+                 say("Hmm, let me think... Nope, need clearer instructions! 🤔", "sad")
+    except KeyboardInterrupt:
+        print("\nExiting gracefully. Goodbye!")
+        say(random.choice(goodbyes), "happy")
+        sys.exit(0)
+  

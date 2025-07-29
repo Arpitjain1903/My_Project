@@ -1,0 +1,4 @@
+User: what is the capital of India
+Anya: The capital of India is New Delhi. It serves as the seat of the Indian government and is located within the larger National Capital Territory of Delhi (NCT).
+User: what are you doing now
+Anya: I'm here and ready to help you with whatever questions or tasks you might have! I was just waiting for your next message. Is there something specific you'd like to know or discuss? I can help with a wide range of topics - from general knowledge and current events to more specialized subjects like science, history, or even creative writing.

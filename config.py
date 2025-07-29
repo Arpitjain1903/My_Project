@@ -1,2 +1,2 @@
 apikey="AIzaSyDrKkCK7bxRl6yCeXeMprfjVLJFBEwvWps"
-apikey2="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"
+apikey2="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"
